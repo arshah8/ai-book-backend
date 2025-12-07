@@ -9,14 +9,10 @@ env/
 ENV/
 .venv
 
-# Environment variables (CRITICAL: Do not commit these!)
+# Environment variables
 .env
 .env.local
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
+*.env
 
 # IDE
 .vscode/
@@ -27,21 +23,21 @@ ENV/
 
 # OS
 .DS_Store
-.MacOS
 Thumbs.db
 
 # Logs
 *.log
-*.pyc
+
+# Database
+*.db
+*.sqlite
 
 # Testing
-.coverage
 .pytest_cache/
+.coverage
 htmlcov/
-.tox/
 
-# Distribution / packaging
+# Distribution
 dist/
 build/
 *.egg-info/
-

@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Enum
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Enum, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import UUID
@@ -37,7 +37,22 @@ else:
 # Only create engine if DATABASE_URL is valid (not placeholder)
 if DATABASE_URL and DATABASE_URL != "postgresql://placeholder:placeholder@localhost/placeholder":
     try:
-        engine = create_engine(DATABASE_URL)
+        # For Neon (serverless Postgres), we need connection pooling with reconnection
+        # pool_pre_ping tests connections before using them (handles closed connections)
+        # pool_size and max_overflow control connection pool size
+        # pool_recycle recycles connections before Neon's idle timeout
+        engine = create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,  # Test connections before using (handles closed connections)
+            pool_size=5,  # Number of connections to maintain
+            max_overflow=10,  # Additional connections beyond pool_size
+            pool_recycle=300,  # Recycle connections after 5 minutes (Neon closes idle connections)
+            echo=False,  # Set to True for SQL query debugging
+            connect_args={
+                "connect_timeout": 10,
+                "sslmode": "require"
+            } if "neon" in DATABASE_URL.lower() or "sslmode" not in DATABASE_URL else {}
+        )
     except Exception as e:
         print(f"⚠️  WARNING: Could not create database engine: {e}")
         print("   Database features will not work")
@@ -114,14 +129,25 @@ async def init_db():
     Base.metadata.create_all(bind=engine)
 
 def get_db():
-    """Get database session"""
+    """Get database session with automatic reconnection"""
     if SessionLocal is None:
         return None
-    db = SessionLocal()
+    
+    db = None
     try:
+        db = SessionLocal()
+        # Test connection (pool_pre_ping should handle this, but double-check)
+        db.execute(text("SELECT 1"))
         yield db
+    except Exception as e:
+        print(f"⚠️  Database connection error: {e}")
+        if db:
+            db.rollback()
+        # Re-raise to let FastAPI handle it (will return 500)
+        raise
     finally:
-        db.close()
+        if db:
+            db.close()
 
 async def save_chat_history(user_id: str, message: str, response: str, context: str = None):
     """Save chat history to database"""
