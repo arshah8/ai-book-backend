@@ -163,35 +163,48 @@ async def signup(request: SignupRequest, db: Session = Depends(get_db)):
 @router.post("/signin", response_model=AuthResponse)
 async def signin(request: SigninRequest, db: Session = Depends(get_db)):
     """User signin"""
-    if not db:
-         raise HTTPException(status_code=503, detail="Database not available")
+    try:
+        if not db:
+            raise HTTPException(status_code=503, detail="Database not available")
 
-    # Check if user exists
-    user = db.query(UserProfile).filter(UserProfile.email == request.email).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+        # Check if user exists
+        user = db.query(UserProfile).filter(UserProfile.email == request.email).first()
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Verify password
+        if not user.password_hash or not verify_password(request.password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or password"
+            )
+        
+        # Create JWT token
+        user_data = {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "experience_level": user.experience_level.value if hasattr(user.experience_level, 'value') else user.experience_level
+        }
+        
+        token = create_access_token({"id": user.id, "email": user.email})
+        
+        return AuthResponse(
+            access_token=token,
+            user=user_data
         )
-    
-    # Verify password
-    if not user.password_hash or not verify_password(request.password, user.password_hash):
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log the error and return a proper JSON error
+        import traceback
+        print(f"Error in signin endpoint: {e}")
+        traceback.print_exc()
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
         )
-    
-    # Create JWT token
-    user_data = {
-        "id": user.id,
-        "email": user.email,
-        "name": user.name,
-        "experience_level": user.experience_level.value if hasattr(user.experience_level, 'value') else user.experience_level
-    }
-    
-    token = create_access_token({"id": user.id, "email": user.email})
-    
-    return AuthResponse(
-        access_token=token,
-        user=user_data
-    )

@@ -147,7 +147,7 @@ def get_db():
         raise
     finally:
         if db:
-            db.close()
+        db.close()
 
 async def save_chat_history(user_id: str, message: str, response: str, context: str = None):
     """Save chat history to database"""

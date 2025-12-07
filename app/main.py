@@ -1,10 +1,24 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from typing import Optional, List
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import traceback
+import logging
+import sys
+
+# Configure logging to ensure output is visible
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    stream=sys.stdout,
+    force=True
+)
+logger = logging.getLogger(__name__)
 
 # Load .env file from backend directory BEFORE importing other modules
 env_path = Path(__file__).parent.parent / '.env'
@@ -17,6 +31,28 @@ from app.models import ChatRequest, ChatResponse, TranslateRequest, TranslateRes
 from app.auth import get_current_user_optional, router as auth_router
 
 app = FastAPI(title="Physical AI Textbook API", version="1.0.0")
+
+# Global exception handler to ensure all errors return JSON
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions and return JSON"""
+    print(f"Unhandled exception: {exc}")
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": f"Internal server error: {str(exc)}",
+            "type": type(exc).__name__
+        }
+    )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors and return JSON"""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors()}
+    )
 
 # CORS middleware - allow all origins for development
 app.add_middleware(
@@ -59,31 +95,49 @@ async def chat(
     current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     """RAG chatbot endpoint"""
+    msg_preview = request.message[:50] if request.message else 'None'
+    logger.info(f"\n🔍 CHAT REQUEST: message='{msg_preview}...', context={'Yes' if request.context else 'No'}")
     try:
         # Get embeddings for query (with fallback)
         context_text = ""
+        rag_used = False
+        logger.info("📊 Step 1: Generating embeddings...")
         try:
             query_embedding = await get_embeddings(request.message or request.context)
+            emb_len = len(query_embedding) if query_embedding else 0
+            logger.info(f"📊 Step 2: Embedding generated, length={emb_len}")
             
             if query_embedding and len(query_embedding) > 0:
                 # Search Qdrant for relevant chunks
+                logger.info("📊 Step 3: Searching Qdrant...")
                 try:
                     qdrant_client = await get_qdrant_client()
                     search_results = await search_vectors(qdrant_client, query_embedding, limit=5)
-                    # Build context from search results
-                    context_text = "\n\n".join([result["text"] for result in search_results])
+                    
+                    if search_results and len(search_results) > 0:
+                        # Build context from search results
+                        context_text = "\n\n".join([result["text"] for result in search_results])
+                        rag_used = True
+                        top_score = search_results[0].get('score', 'N/A')
+                        logger.info(f"✅ RAG ACTIVE: Retrieved {len(search_results)} chunks from Qdrant")
+                        logger.info(f"   Top result score: {top_score}")
+                    else:
+                        logger.warning("⚠️  Qdrant search returned no results, using fallback context")
                 except Exception as e:
-                    print(f"⚠️  Qdrant search failed: {e}")
-                    print("   Using fallback context")
+                    logger.error(f"⚠️  Qdrant search failed: {e}")
+                    logger.warning("   Using fallback context")
             else:
-                print("⚠️  No embeddings available, using fallback context")
+                logger.warning("⚠️  No embeddings available, using fallback context")
         except Exception as e:
-            print(f"⚠️  Embedding generation failed: {e}")
-            print("   Using fallback context")
+            logger.error(f"⚠️  Embedding generation failed: {e}")
+            logger.warning("   Using fallback context")
         
         # Fallback context if no vector search results
         if not context_text:
             context_text = "This is a textbook about Physical AI & Humanoid Robotics covering ROS 2, Gazebo, NVIDIA Isaac, and Vision-Language-Action systems."
+            logger.warning("⚠️  Using FALLBACK context (RAG not used)")
+        else:
+            logger.info(f"📚 Context length: {len(context_text)} characters")
         
         # Add selected text context if provided
         if request.context:
