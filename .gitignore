@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables (CRITICAL: Do not commit these!)
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.MacOS
+Thumbs.db
+
+# Logs
+*.log
+*.pyc
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
