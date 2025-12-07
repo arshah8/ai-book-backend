@@ -130,9 +130,9 @@ async def seed_vectors():
   book_chunks = load_book_chunks()
   print(f"Starting vector seeding...")
   print(f"Total chunks to process: {len(book_chunks)}")
-
+  
   qdrant_client = await get_qdrant_client()
-
+  
   if RESET_COLLECTION:
       print(f"🧹 Resetting Qdrant collection '{COLLECTION_NAME}'...")
       try:
@@ -143,13 +143,13 @@ async def seed_vectors():
 
   for i, chunk in enumerate(book_chunks, 1):
       print(f"[{i}/{len(book_chunks)}] {chunk['module']}/{chunk['section']}...")
-
+      
       # Get embedding
       embedding = await get_embeddings(chunk["text"])
       if not embedding:
           print("  ⚠️  Failed to get embedding")
           continue
-
+      
       vector_id = str(uuid.uuid4())
       await add_vector(
           qdrant_client,
@@ -161,12 +161,12 @@ async def seed_vectors():
               "section": chunk["section"],
           },
       )
-
+      
       print(f"  ✓ Added vector ({len(embedding)} dimensions)")
-
+  
   print(f"\n✅ Vector seeding complete! Added {len(book_chunks)} chunks to Qdrant")
 
 
 if __name__ == "__main__":
-  asyncio.run(seed_vectors())
+    asyncio.run(seed_vectors())
 
